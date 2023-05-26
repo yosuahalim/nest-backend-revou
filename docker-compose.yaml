@@ -1,0 +1,27 @@
+version: '3.3'
+
+services:
+  database:
+    image: postgres:alpine
+    container_name: my-backend-infra-database
+    hostname: database
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - 5432:5432
+    env_file:
+      - .env
+    restart: always
+  app:
+    image: asia-southeast2-docker.pkg.dev/magnetic-market-387717/docker/revou-project:latest
+    container_name: my-backend-infra-app
+    build: .
+    ports:
+      - 80:3000
+      - 443:3000
+      - 3000:3000
+    env_file:
+      - .env
+
+volumes:
+  postgres:
