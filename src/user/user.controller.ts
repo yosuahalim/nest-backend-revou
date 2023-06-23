@@ -1,54 +1,73 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  Redirect,
+  ForbiddenException,
+  Get,
+  NotFoundException,
+  Param,
+  ParseIntPipe,
+  Post,
+  UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import { UserService } from './user.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+// import { CurrentUser } from 'src/decorators/user.decorator';
+import { PrismaService } from '../prisma/prisma.service';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { UserEntity } from './entities/user.entity';
+import { UserInput } from './dto/user.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { CurrentUser } from '../decorators/user.decorator';
+import { User } from '@prisma/client';
 
-@Controller('user')
+@Controller('users')
+@ApiTags('users')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(private prisma: PrismaService) {}
 
-  @Get()
-  @Redirect('https://nestjs.com', 301)
-  getHello(): string {
-    return this.userService.getHello();
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: UserEntity })
+  async getUser(@CurrentUser() currentUser: User) {
+    return await this.prisma.user.findFirst({
+      where: {
+        id: currentUser.id,
+      },
+      select: {
+        id: true,
+        email: true,
+      },
+    });
   }
 
-  @Get('myname/:name')
-  getMyName(@Param('name') name: string): string {
-    return this.userService.getMyName(name);
-  }
-
-  @Post()
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.userService.create(createUserDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.userService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.userService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.userService.update(+id, updateUserDto);
-  }
-
+  @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.userService.remove(+id);
+  @ApiBearerAuth()
+  async deleteUser(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() currentUser: User,
+  ) {
+    if (id !== currentUser.id) {
+      throw new UnauthorizedException('Not allowed to delete user');
+    }
+
+    try {
+      const deletedUser = await this.prisma.user.delete({
+        where: {
+          id,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Successfuly deleted user with id: ${id}`,
+      };
+    } catch (error) {
+      if (error.code === 'P2025') {
+        throw new NotFoundException(error.meta.cause);
+      }
+      throw error;
+    }
   }
 }

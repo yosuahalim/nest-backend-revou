@@ -1,44 +1,68 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { User } from '@prisma/client';
+import { JwtService } from '@nestjs/jwt';
+import { Request } from 'express';
+import { AuthDto } from './dto/auth.dto';
 
 @Injectable()
 export class AuthService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private jwtService: JwtService,
+  ) {}
 
-  async register(username: string, password: string) {
-    const hashedPassword = bcrypt.hashSync(password, 10);
-    return await this.prisma.user.create({
-      data: {
-        username,
-        password: hashedPassword,
-      },
-      select: {
-        id: true,
-        username: true,
-      },
-    });
+  async createUser(input: AuthDto) {
+    const hash = await bcrypt.hashSync(input.password, 10);
+
+    try {
+      return await this.prisma.user.create({
+        data: {
+          email: input.email,
+          hashPassword: hash,
+        },
+        select: {
+          id: true,
+          email: true,
+        },
+      });
+    } catch (err) {
+      if (err.code === 'P2002') {
+        throw new ForbiddenException('Email has been used');
+      }
+      throw err;
+    }
   }
 
-  async validate(username: string, password: string): Promise<User | null> {
-    const user: User = await this.prisma.user.findFirst({
+  async validateUser(input: AuthDto): Promise<any> {
+    const user = await this.prisma.user.findFirst({
       where: {
-        username,
+        email: input.email,
       },
     });
-
     if (!user) {
-      return null;
+      throw new NotFoundException('Incorrect Credential (7701)');
     }
 
-    const passwordMatch: boolean =
-      user && bcrypt.compareSync(password, user.password);
+    const isPwMatch: boolean = bcrypt.compareSync(
+      input.password,
+      user.hashPassword,
+    );
 
-    if (!passwordMatch) {
-      return null;
+    if (!isPwMatch) {
+      throw new UnauthorizedException('Incorrect Credential (7702)');
     }
+    return {
+      accessToken: this.jwtService.sign({ sub: user.id }),
+    };
+  }
 
-    return user;
+  logout() {
+    msg: 'test';
   }
 }
